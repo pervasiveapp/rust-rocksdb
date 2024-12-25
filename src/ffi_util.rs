@@ -59,6 +59,7 @@ pub(crate) fn to_cpath<P: AsRef<Path>>(path: P) -> Result<CString, Error> {
     }
 }
 
+#[macro_export]
 macro_rules! ffi_try {
     ( $($function:ident)::*() ) => {
         ffi_try_impl!($($function)::*())
