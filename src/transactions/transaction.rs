@@ -589,6 +589,109 @@ impl<'db, DB> Transaction<'db, DB> {
         convert_values(values, values_sizes, errors)
     }
 
+    pub fn multi_get_for_update<K, I>(&self, keys: I) -> Vec<Result<Option<Vec<u8>>, Error>>
+    where
+        K: AsRef<[u8]>,
+        I: IntoIterator<Item = K>,
+    {
+        self.multi_get_for_update_opt(keys, &ReadOptions::default())
+    }
+
+    pub fn multi_get_for_update_opt<K, I>(
+        &self,
+        keys: I,
+        readopts: &ReadOptions,
+    ) -> Vec<Result<Option<Vec<u8>>, Error>>
+    where
+        K: AsRef<[u8]>,
+        I: IntoIterator<Item = K>,
+    {
+        let (keys, keys_sizes): (Vec<Box<[u8]>>, Vec<_>) = keys
+            .into_iter()
+            .map(|key| {
+                let key = key.as_ref();
+                (Box::from(key), key.len())
+            })
+            .unzip();
+        let ptr_keys: Vec<_> = keys.iter().map(|k| k.as_ptr() as *const c_char).collect();
+
+        let mut values = vec![ptr::null_mut(); keys.len()];
+        let mut values_sizes = vec![0_usize; keys.len()];
+        let mut errors = vec![ptr::null_mut(); keys.len()];
+        unsafe {
+            ffi::rocksdb_transaction_multi_get_for_update(
+                self.inner,
+                readopts.inner,
+                ptr_keys.len(),
+                ptr_keys.as_ptr(),
+                keys_sizes.as_ptr(),
+                values.as_mut_ptr(),
+                values_sizes.as_mut_ptr(),
+                errors.as_mut_ptr(),
+            );
+        }
+
+        convert_values(values, values_sizes, errors)
+    }
+
+    pub fn multi_get_for_update_cf<'a, 'b: 'a, K, I, W>(
+        &'a self,
+        keys: I,
+    ) -> Vec<Result<Option<Vec<u8>>, Error>>
+    where
+        K: AsRef<[u8]>,
+        I: IntoIterator<Item = (&'b W, K)>,
+        W: 'b + AsColumnFamilyRef,
+    {
+        self.multi_get_for_update_cf_opt(keys, &ReadOptions::default())
+    }
+
+    pub fn multi_get_for_update_cf_opt<'a, 'b: 'a, K, I, W>(
+        &'a self,
+        keys: I,
+        readopts: &ReadOptions,
+    ) -> Vec<Result<Option<Vec<u8>>, Error>>
+    where
+        K: AsRef<[u8]>,
+        I: IntoIterator<Item = (&'b W, K)>,
+        W: 'b + AsColumnFamilyRef,
+    {
+        let (cfs_and_keys, keys_sizes): (Vec<(_, Box<[u8]>)>, Vec<_>) = keys
+            .into_iter()
+            .map(|(cf, key)| {
+                let key = key.as_ref();
+                ((cf, Box::from(key)), key.len())
+            })
+            .unzip();
+        let ptr_keys: Vec<_> = cfs_and_keys
+            .iter()
+            .map(|(_, k)| k.as_ptr() as *const c_char)
+            .collect();
+        let ptr_cfs: Vec<_> = cfs_and_keys
+            .iter()
+            .map(|(c, _)| c.inner().cast_const())
+            .collect();
+
+        let mut values = vec![ptr::null_mut(); ptr_keys.len()];
+        let mut values_sizes = vec![0_usize; ptr_keys.len()];
+        let mut errors = vec![ptr::null_mut(); ptr_keys.len()];
+        unsafe {
+            ffi::rocksdb_transaction_multi_get_for_update_cf(
+                self.inner,
+                readopts.inner,
+                ptr_cfs.as_ptr(),
+                ptr_keys.len(),
+                ptr_keys.as_ptr(),
+                keys_sizes.as_ptr(),
+                values.as_mut_ptr(),
+                values_sizes.as_mut_ptr(),
+                errors.as_mut_ptr(),
+            );
+        }
+
+        convert_values(values, values_sizes, errors)
+    }
+
     /// Put the key value in default column family and do conflict checking on the key.
     ///
     /// See [`put_cf`] for details.
